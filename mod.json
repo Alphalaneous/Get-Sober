@@ -3,11 +3,12 @@
 	"gd": {
 		"win": "2.2074"
 	},
-	"id": "alphalaneous.get-sober",
-	"name": "Get Sober",
+	"id": "alphalaneous.sobriety",
+	"name": "Sobriety",
 	"version": "v1.0.0-alpha.1",
 	"developer": "Alphalaneous",
-	"description": "No more Wine file explorer",
+	"description": "No more Wine file explorer and console!",
+	"early-load": true,
 	"links": {
         "homepage": "https://linktr.ee/Alphalaneous",
         "source": "https://github.com/Alphalaneous/Get-Sober",
@@ -15,5 +16,23 @@
     },
     "tags": [
         "enhancement", "interface"
-    ]
+    ],
+	"settings": {
+		"console-font-size": {
+			"name": "Console Font Size",
+			"type": "int",
+			"default": 10,
+			"min": 2,
+			"max": 72,
+			"requires-restart": true
+		},
+		"console-heartbeat-threshold": {
+			"name": "Console Heartbeat Threshold (ms)",
+			"description": "The amount of time between heartbeats checked, to know if the game should close due to the console closing. In milliseconds.",
+			"type": "int",
+			"default": 1000,
+			"min": 250,
+			"max": 5000
+		}
+	}
 }

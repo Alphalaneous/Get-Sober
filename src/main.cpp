@@ -2,8 +2,162 @@
 #include <Geode/modify/CCTouchDispatcher.hpp>
 #include <Geode/modify/CCKeyboardDispatcher.hpp>
 #include <Geode/modify/CCMouseDispatcher.hpp>
+#include "FileAppender.hpp"
 
 using namespace geode::prelude;
+
+static Mod* s_geode = Loader::get()->getLoadedMod("geode.loader");
+static bool s_logMilliseconds = false;
+
+void systemNoConsole(const std::string& cmd) {
+    STARTUPINFOA si{};
+    PROCESS_INFORMATION pi{};
+
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+
+    if (!CreateProcessA(
+            nullptr,
+            const_cast<char*>(cmd.c_str()),
+            nullptr, nullptr,
+            FALSE,
+            CREATE_NO_WINDOW,
+            nullptr,
+            nullptr,
+            &si,
+            &pi
+        )) {
+    } else {
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+}
+
+auto convertTime(auto timePoint) {
+    auto timeEpoch = std::chrono::system_clock::to_time_t(timePoint);
+    return fmt::localtime(timeEpoch);
+}
+
+Severity fromString(std::string_view severity) {
+    if (severity == "debug") return Severity::Debug;
+    if (severity == "info") return Severity::Info;
+    if (severity == "warning") return Severity::Warning;
+    if (severity == "error") return Severity::Error;
+    return Severity::Info;
+}
+
+static Severity getConsoleLogLevel() {
+    static Severity level = fromString(s_geode->getSettingValue<std::string>("console-log-level"));
+    listenForSettingChanges("console-log-level", [](std::string value) {
+        level = fromString(value);
+    }, s_geode);
+
+    return level;
+}
+
+struct Log {
+    Mod* mod;
+    Severity severity = Severity::Info;
+    std::string message;
+    std::string threadName;
+    std::tm time;
+    long long milliseconds;
+    bool newLine;
+    int offset;
+};
+
+std::string buildLog(const Log& log) {
+    std::string ret;
+
+    if (s_logMilliseconds) {
+        ret = fmt::format("{:%H:%M:%S}.{:03}", log.time, log.milliseconds);
+    }
+    else {
+        ret = fmt::format("{:%H:%M:%S}", log.time);
+    }
+
+    switch (log.severity.m_value) {
+        case Severity::Debug:
+            ret += " DEBUG";
+            break;
+        case Severity::Info:
+            ret += " INFO ";
+            break;
+        case Severity::Warning:
+            ret += " WARN ";
+            break;
+        case Severity::Error:
+            ret += " ERROR";
+            break;
+        default:
+            ret += " ?????";
+            break;
+    }
+
+    if (log.threadName.empty())
+        ret += fmt::format(" [{}]: ", log.mod->getName());
+    else
+        ret += fmt::format(" [{}] [{}]: ", log.threadName, log.mod->getName());
+
+    ret += log.message;
+
+    return ret;
+}
+
+static FileAppender s_logFile("/tmp/GeometryDash/console.ansi");
+
+void vlogImpl_h(Severity severity, Mod* mod, fmt::string_view format, fmt::format_args args) {
+    log::vlogImpl(severity, mod, format, args);
+
+    if (!mod->isLoggingEnabled()) return;
+    if (severity < mod->getLogLevel()) return;
+    if (severity < getConsoleLogLevel()) return;
+
+    auto time = std::chrono::system_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(time.time_since_epoch()) % 1000;
+
+    Log log {
+        mod,
+        severity,
+        fmt::vformat(format, args),
+        thread::getName(),
+        convertTime(time),
+        ms.count()
+    };
+
+    int color = 0;
+    int color2 = -1;
+    switch (severity) {
+        case Severity::Debug:
+            color = 243;
+            color2 = 250;
+            break;
+        case Severity::Info:
+            color = 33;
+            color2 = 254;
+            break;
+        case Severity::Warning:
+            color = 229;
+            color2 = 230;
+            break;
+        case Severity::Error:
+            color = 9;
+            color2 = 224;
+            break;
+        default:
+            color = 7;
+            break;
+    }
+    
+    std::string_view sv{buildLog(log)};
+
+    size_t colorEnd = sv.find_first_of('[') - 1;
+
+    auto str = fmt::format("\x1b[38;5;{}m{}\x1b[0m{}\n", color, sv.substr(0, colorEnd), sv.substr(colorEnd));
+    
+    s_logFile.append(str);
+}
 
 static std::string wineToLinuxPath(const std::filesystem::path& winPath) {
     std::string s = utils::string::pathToString(winPath);
@@ -16,7 +170,16 @@ static std::string wineToLinuxPath(const std::filesystem::path& winPath) {
     for (auto& c : rest) if (c == '\\') c = '/';
 
     const char* prefixEnv = std::getenv("WINEPREFIX");
-    std::string prefix = prefixEnv ? prefixEnv : std::string(std::getenv("HOME")) + "/.wine";
+    const char* homeEnv = std::getenv("HOME");
+
+    std::string prefix;
+    if (prefixEnv) {
+        prefix = prefixEnv;
+    } else if (homeEnv) {
+        prefix = std::string(homeEnv) + "/.wine";
+    } else {
+        prefix = "/.wine";
+    }
 
     std::string drivePath;
 
@@ -123,7 +286,7 @@ static void runOpenFileScript(const std::string& startPath, PickMode pickMode, c
         command += "\"";
     }
 
-    system(command.c_str());
+    systemNoConsole(command.c_str());
 }
 
 std::vector<std::string> generateExtensionStrings(const std::vector<utils::file::FilePickOptions::Filter>& filters) {
@@ -248,6 +411,48 @@ static void notifySelectedFileChange() {
     s_pickerActive.store(false, std::memory_order_release);
 }
 
+static int s_heartbeatThreshold;
+static bool s_hasConsole = false;
+static std::atomic_bool s_heartbeatActive = false;
+
+static void heartbeatThread() {
+    if (!s_heartbeatActive.exchange(true)) {
+        std::thread([]() {
+            while (true) {
+                auto heartbeatPath = std::filesystem::path("/tmp/GeometryDash/console.heartbeat");
+                auto strRes = utils::file::readString(heartbeatPath);
+                if (!strRes) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    continue;
+                } 
+
+                auto str = strRes.unwrap();
+                utils::string::trimIP(str);
+
+                auto millisRes = numFromString<long long>(str);
+
+                if (!millisRes) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    continue;
+                }
+
+                auto millis = millisRes.unwrap();
+
+                auto now = std::chrono::system_clock::now();
+                auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now.time_since_epoch()
+                ).count();
+
+                if (nowMs - millis > s_heartbeatThreshold) {
+                    utils::game::exit(false);
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+        }).detach();
+    }
+}
+
 static void watcherThread() {
     const auto path = std::filesystem::path("Z:\\tmp\\GeometryDash");
 
@@ -297,6 +502,9 @@ static void watcherThread() {
             if (name == "selectedFile.txt") {
                 notifySelectedFileChange();
             }
+            if (name == "console.heartbeat") {
+                heartbeatThread();
+            }
 
             change = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(
                 reinterpret_cast<char*>(change) + change->NextEntryOffset
@@ -305,7 +513,7 @@ static void watcherThread() {
     }
 }
 
-static std::string openFileScript = 
+static std::string s_openFileScript = 
 R"script(#!/bin/bash
 
 TMP="/tmp/GeometryDash/selectedFile.txt"
@@ -444,6 +652,38 @@ launch_picker &
 
 )script";
 
+static std::string s_openConsoleScript = 
+R"script(#!/bin/bash
+
+FONT_SIZE="${1:-10}"
+
+xterm \
+  -fa Monospace \
+  -bg black -fg white \
+  -T "Geometry Dash" \
+  -fs "$FONT_SIZE" \
+  -xrm "XTerm*VT100.Translations: #override Ctrl Shift <Key>C: copy-selection(CLIPBOARD)" \
+  -e tail -F /tmp/GeometryDash/console.ansi &
+
+TERM_PID=$!
+
+HEARTBEAT_FILE="/tmp/GeometryDash/console.heartbeat"
+EXIT_FILE="/tmp/GeometryDash/console.exit"
+
+while [ ! -f "$EXIT_FILE" ]; do
+    if ! kill -0 "$TERM_PID" 2>/dev/null; then
+        break
+    fi
+
+    date +%s%3N > "$HEARTBEAT_FILE"
+    sleep 0.016667
+done
+
+kill "$TERM_PID" 2>/dev/null
+rm -f "$EXIT_FILE"
+
+)script";
+
 $execute {
 
     HMODULE hModule = GetModuleHandleA("ntdll.dll");
@@ -457,8 +697,14 @@ $execute {
                 and properly bridge between some linux based script and wine.
             */
             (void) utils::file::createDirectory("/tmp/GeometryDash/");
-            auto scriptPath = std::filesystem::path("/tmp/GeometryDash/openFile.exe");
-            (void) utils::file::writeString(scriptPath, openFileScript);
+            auto filesScriptPath = std::filesystem::path("/tmp/GeometryDash/openFile.exe");
+            (void) utils::file::writeString(filesScriptPath, s_openFileScript);
+
+            auto consoleScriptPath = std::filesystem::path("/tmp/GeometryDash/openConsole.exe");
+            (void) utils::file::writeString(consoleScriptPath, s_openConsoleScript);
+
+            auto consolePath = std::filesystem::path("/tmp/GeometryDash/console.ansi");
+            (void) utils::file::writeString(consolePath, "");
 
             std::thread(watcherThread).detach();
 
@@ -477,6 +723,38 @@ $execute {
                 &file_openFolder_h,
                 "utils::file::openFolder"
             );
+            (void) Mod::get()->hook(
+                reinterpret_cast<void*>(addresser::getNonVirtual(&log::vlogImpl)),
+                &vlogImpl_h,
+                "log::vlogImpl"
+            );
+
+            auto exitPath = std::filesystem::path("/tmp/GeometryDash/console.exit");
+            std::filesystem::remove(exitPath);
+
+            if (s_geode->getSettingValue<bool>("show-platform-console")) {
+                s_heartbeatThreshold = Mod::get()->getSettingValue<int>("console-heartbeat-threshold");
+                listenForSettingChanges<int>("console-heartbeat-threshold", [](int setting) {
+                    s_heartbeatThreshold = setting;
+                });
+
+                s_logMilliseconds = s_geode->getSettingValue<bool>("log-milliseconds");
+                listenForSettingChanges<bool>("log-milliseconds", [](bool setting) {
+                    s_logMilliseconds = setting;
+                }, s_geode);
+
+                s_hasConsole = true;
+                FreeConsole();
+
+                int fontSize = Mod::get()->getSettingValue<int>("console-font-size");
+                systemNoConsole(fmt::format("/tmp/GeometryDash/openConsole.exe {}", fontSize).c_str());
+
+                std::atexit([] {
+                    auto exitPath = std::filesystem::path("/tmp/GeometryDash/console.exit");
+                    (void) utils::file::writeString(exitPath, "");
+                });
+            }
+            
         }
         else {
             (void) Mod::get()->uninstall();
@@ -500,7 +778,7 @@ class $modify(CCTouchDispatcher) {
 };
 
 class $modify(CCKeyboardDispatcher) {
-	bool dispatchKeyboardMSG(enumKeyCodes key, bool isKeyDown, bool isKeyRepeat) {
+    bool dispatchKeyboardMSG(enumKeyCodes key, bool isKeyDown, bool isKeyRepeat) {
         if (s_pickerActive) {
             if (isKeyDown && !isKeyRepeat) MessageBeep(MB_ICONWARNING);
             return false;
@@ -510,7 +788,7 @@ class $modify(CCKeyboardDispatcher) {
 };
 
 class $modify(CCMouseDispatcher) {
-	bool dispatchScrollMSG(float x, float y) {
+    bool dispatchScrollMSG(float x, float y) {
         if (s_pickerActive) {
             return false;
         }
