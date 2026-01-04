@@ -8,7 +8,6 @@ class FileAppender {
 public:
     FileAppender(const std::string& path) {
         std::lock_guard lock(m_mtx);
-        // Open file in append mode, create if missing
         m_ofs.open(path, std::ios::out | std::ios::app);
     }
 
