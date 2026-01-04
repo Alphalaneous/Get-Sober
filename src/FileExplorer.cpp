@@ -6,6 +6,7 @@
 #include "FileExplorer.hpp"
 #include "FileWatcher.hpp"
 #include "Utils.hpp"
+#include "Config.hpp"
 
 using namespace geode::prelude;
 
@@ -84,7 +85,7 @@ Task<Result<std::vector<std::filesystem::path>>> file_pickMany_h(const utils::fi
 }
 
 /*
-    I can't lie, half of this script is AI assisted, it's so teadious...
+    I can't lie, half of this script is AI assisted, it's so tedious...
     It works and grabs the right *visible* default. Running GD through steam does block access to some files,
     meaning that it likely wont always grab the right default and falls back to GTK.
 */
@@ -108,7 +109,56 @@ MODE="$1"
 shift
 [ -z "$MODE" ] && MODE="single"
 
+/*
+    I only tested this on linux mint using cinnamon, as it's what I personally daily drive.
+    If it doesn't work on other distros/desktop environments, sorry.
+    (from what it looks like dark mode probably already worked on plasma without this?)
+*/
+DARK_MODE="$1"
+shift
+[ -z "$DARK_MODE" ] && DARK_MODE="light"
+
 FILTERS=("$@")
+
+# Set dark mode environment variables if enabled
+if [ "$DARK_MODE" = "dark" ]; then
+    # Non-invasive dark-mode hints for GTK/Qt dialogs
+    export GTK_SETTINGS_VARIANT=dark
+    export QT_STYLE_OVERRIDE=Adwaita-Dark
+    export GTK_THEME="Adwaita:dark"
+
+    # Try to select an installed dark GTK theme
+    THEME=""
+    if command -v gsettings >/dev/null 2>&1; then
+        THEME=$(gsettings get org.cinnamon.desktop.interface gtk-theme 2>/dev/null | tr -d "'")
+    fi
+
+    # Prefer a "*Dark*" variant of the current theme
+    if [ -n "$THEME" ]; then
+        shopt -s nullglob
+        for root in "/usr/share/themes" "$HOME/.themes" "$HOME/.local/share/themes"; do
+            for path in "$root/${THEME}"* "$root/${THEME%-Dark}"* "$root/${THEME%-dark}"*; do
+                name=$(basename "$path")
+                if [ -d "$path" ] && [[ "$name" =~ [Dd]ark ]]; then
+                    export GTK_THEME="$name"
+                    break 2
+                fi
+            done
+        done
+        shopt -u nullglob
+    fi
+
+    # If we still didn't find a dark theme, try common theme names
+    if [ -z "${GTK_THEME:-}" ] || [ "$GTK_THEME" = "Adwaita:dark" ]; then
+        for fallback in "Mint-Y-Dark" "Mint-X-Dark" "Mint-L-Dark" "Adwaita:dark" "Adwaita-dark"; do
+            base="${fallback%%:*}"
+            if [ -d "/usr/share/themes/$base" ] || [ -d "$HOME/.themes/$base" ] || [ -d "$HOME/.local/share/themes/$base" ]; then
+                export GTK_THEME="$fallback"
+                break
+            fi
+        done
+    fi
+fi
 
 PICKER=""
 DE="$XDG_CURRENT_DESKTOP"
@@ -313,6 +363,11 @@ void FileExplorer::openFile(const std::string& startPath, PickMode pickMode, con
             break;
         }
     }
+    command += "\"";
+
+    // IMPORTANT: The bash script expects DARK_MODE before FILTERS.
+    command += " \"";
+    command += Config::get()->isDarkModeEnabled() ? "dark" : "light";
     command += "\"";
 
     for (const auto& param : filters) {

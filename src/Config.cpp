@@ -50,3 +50,12 @@ bool Config::hasConsole() {
     static bool setting = m_geode->getSettingValue<bool>("show-platform-console");
     return setting;
 }
+
+bool Config::isDarkModeEnabled() {
+    static auto setting = m_mod->getSettingValue<bool>("enable-dark-mode");
+    static auto listener = listenForSettingChanges("enable-dark-mode", [this](bool value) {
+        setting = value;
+    });
+
+    return setting;
+}

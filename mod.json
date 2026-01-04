@@ -33,6 +33,12 @@
 			"default": 1000,
 			"min": 250,
 			"max": 5000
+		},
+		"enable-dark-mode": {
+			"name": "Dark Mode",
+			"description": "Enable dark mode for file browser and terminal windows.",
+			"type": "bool",
+			"default": false
 		}
 	}
 }

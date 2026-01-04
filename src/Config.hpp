@@ -13,6 +13,7 @@ public:
     int getHeartbeatThreshold();
     int getFontSize();
     bool hasConsole();
+    bool isDarkModeEnabled();
 
 private:
     geode::Mod* m_geode = nullptr;

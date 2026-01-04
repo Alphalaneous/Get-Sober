@@ -42,7 +42,7 @@ void Console::setup() {
         setupHooks();
 
         FreeConsole();
-        sobriety::utils::runCommand(fmt::format("/tmp/GeometryDash/openConsole.exe {}", Config::get()->getFontSize()).c_str());
+        sobriety::utils::runCommand(fmt::format("/tmp/GeometryDash/openConsole.exe {} {}", Config::get()->getFontSize(), Config::get()->isDarkModeEnabled() ? "dark" : "light").c_str());
 
         /*
             if this fails, the console wont exit, it shouldn't fail, but if it does, it isn't a big deal, as the user can close it themselves still
@@ -131,10 +131,22 @@ void Console::setupScript() {
 R"script(#!/bin/bash
 
 FONT_SIZE="${1:-10}"
+DARK_MODE="${2:-light}"
+
+BG_COLOR="black"
+FG_COLOR="white"
+
+if [ "$DARK_MODE" = "dark" ]; then
+    BG_COLOR="#1e1e1e"
+    FG_COLOR="#e0e0e0"
+else
+    BG_COLOR="white"
+    FG_COLOR="black"
+fi
 
 xterm \
   -fa Monospace \
-  -bg black -fg white \
+  -bg "$BG_COLOR" -fg "$FG_COLOR" \
   -T "Geometry Dash" \
   -fs "$FONT_SIZE" \
   -xrm "XTerm*VT100.Translations: #override Ctrl Shift <Key>C: copy-selection(CLIPBOARD)" \
