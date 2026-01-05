@@ -32,7 +32,7 @@ public:
     void notifySelectedFileChange();
 
     std::shared_ptr<PickerState> getState();
-    std::vector<std::string> generateExtensionStrings(const std::vector<geode::utils::file::FilePickOptions::Filter>& filters);
+    std::vector<std::string> generateExtensionStrings(std::vector<geode::utils::file::FilePickOptions::Filter> filters);
 
 private:
     std::shared_ptr<PickerState> m_state;
