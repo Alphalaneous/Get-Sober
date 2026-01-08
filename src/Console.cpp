@@ -1,4 +1,5 @@
 #include <Geode/Geode.hpp>
+#include <Geode/modify/CCDirector.hpp>
 #include "Console.hpp"
 #include "FileAppender.hpp"
 #include "Scheduler.hpp"
@@ -43,16 +44,6 @@ void Console::setup() {
 
         FreeConsole();
         sobriety::utils::runCommand(fmt::format("/tmp/GeometryDash/openConsole.exe {}", Config::get()->getFontSize()).c_str());
-
-        /*
-            if this fails, the console wont exit, it shouldn't fail, but if it does, it isn't a big deal, as the user can close it themselves still
-            imo a skill issue if writing to /tmp fails for any of these.
-        */
-        std::atexit([] {
-            auto exitPath = std::filesystem::path("/tmp/GeometryDash/console.exit");
-            auto exitRes = utils::file::writeString(exitPath, "");
-            if (!exitRes) return log::error("Failed to create console exit file");
-        });
 
         AddVectoredExceptionHandler(0, VectoredHandler);
     }
@@ -166,38 +157,39 @@ rm -f "$EXIT_FILE"
 
 void Console::setupHeartbeat() {
     if (!m_hearbeatActive) {
-        Scheduler::get()->schedule("console-heartbeat", [] {
             std::thread([] {
                 auto heartbeatPath = std::filesystem::path("/tmp/GeometryDash/console.heartbeat");
-                auto strRes = utils::file::readString(heartbeatPath);
-                if (!strRes) {
-                    return;
-                } 
+                while (true) {
+                    auto strRes = utils::file::readString(heartbeatPath);
+                    if (!strRes) {
+                        continue;
+                    } 
 
-                auto str = strRes.unwrap();
-                utils::string::trimIP(str);
+                    auto str = strRes.unwrap();
+                    utils::string::trimIP(str);
 
-                auto millisRes = numFromString<long long>(str);
+                    auto millisRes = numFromString<long long>(str);
 
-                if (!millisRes) {
-                    return;
-                }
+                    if (!millisRes) {
+                        continue;
+                    }
 
-                auto millis = millisRes.unwrap();
+                    auto millis = millisRes.unwrap();
 
-                auto now = std::chrono::system_clock::now();
-                auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    now.time_since_epoch()
-                ).count();
+                    auto now = std::chrono::system_clock::now();
+                    auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        now.time_since_epoch()
+                    ).count();
 
-                if (nowMs - millis > Config::get()->getHeartbeatThreshold()) {
-                    queueInMainThread([] {
-                        utils::game::exit(false);
-                        Scheduler::get()->unschedule("console-heartbeat");
-                    });
+                    if (nowMs - millis > Config::get()->getHeartbeatThreshold()) {
+                        queueInMainThread([] {
+                            utils::game::exit(false);
+                            Scheduler::get()->unschedule("console-heartbeat");
+                        });
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
                 }
             }).detach();
-        }, std::chrono::milliseconds(50));
         m_hearbeatActive = true;
     }
 }
@@ -243,3 +235,17 @@ std::string Console::buildLog(const Log& log) {
 std::shared_ptr<FileAppender> Console::getLogAppender() {
     return m_logAppender;
 }
+
+class $modify(CCDirector) {
+
+    void purgeDirector() {
+        /*
+            if this fails, the console wont exit, it shouldn't fail, but if it does, it isn't a big deal, as the user can close it themselves still
+            imo a skill issue if writing to /tmp fails for any of these.
+        */
+        auto exitPath = std::filesystem::path("/tmp/GeometryDash/console.exit");
+        auto exitRes = utils::file::writeString(exitPath, "");
+        if (!exitRes) return log::error("Failed to create console exit file");
+        CCDirector::purgeDirector();
+    }
+};

@@ -5,7 +5,7 @@
 	},
 	"id": "alphalaneous.sobriety",
 	"name": "Sobriety",
-	"version": "v1.0.0-beta.3",
+	"version": "v1.0.0-beta.4",
 	"developer": "Alphalaneous",
 	"description": "No more Wine file explorer and console!",
 	"early-load": true,
