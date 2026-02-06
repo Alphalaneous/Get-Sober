@@ -33,6 +33,6 @@ void Scheduler::update(float dt) {
     }
 }
 
-$execute {
+$on_mod(Loaded) {
     CCScheduler::get()->scheduleUpdateForTarget(Scheduler::get(), INT_MIN, false);
 }

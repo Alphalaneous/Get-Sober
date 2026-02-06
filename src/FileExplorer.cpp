@@ -2,10 +2,14 @@
 #include <Geode/modify/CCTouchDispatcher.hpp>
 #include <Geode/modify/CCKeyboardDispatcher.hpp>
 #include <Geode/modify/CCMouseDispatcher.hpp>
+#include <optional>
+#include <vector>
 #include "FileExplorer.hpp"
 #include "Config.hpp"
 #include "FileWatcher.hpp"
+#include "Geode/loader/Loader.hpp"
 #include "Utils.hpp"
+#include "WaitingPopup.hpp"
 
 using namespace geode::prelude;
 
@@ -25,7 +29,7 @@ void FileExplorer::setup() {
     setupHooks();
 }
 
-bool file_openFolder_h(std::filesystem::path const& path) {
+bool file_openFolder_h(const std::filesystem::path& path) {
     if (std::filesystem::is_directory(path)) {
         FileExplorer::get()->openFile(sobriety::utils::wineToLinuxPath(path), PickMode::BrowseFiles, {});
         return true;
@@ -33,15 +37,11 @@ bool file_openFolder_h(std::filesystem::path const& path) {
     return false;
 }
 
-Task<Result<std::filesystem::path>> file_pick_h(utils::file::PickMode mode, const utils::file::FilePickOptions& options) {
-    using RetTask = Task<Result<std::filesystem::path>>;
+arc::Future<Result<std::optional<std::filesystem::path>>> file_pick_h(utils::file::PickMode mode, utils::file::FilePickOptions options) {
+    if (FileExplorer::get()->isPickerActive()) co_return Err("File picker is already open");
 
-    if (FileExplorer::get()->isPickerActive()) return RetTask::immediate(Err("File picker is already open"));
-
-    auto state = std::make_shared<PickerState>();
-    FileExplorer::get()->setState(state);
     FileExplorer::get()->setPickerActive(true);
-    
+
     auto defaultPath = sobriety::utils::wineToLinuxPath(options.defaultPath.value_or(dirs::getGameDir()));
 
     FileExplorer::get()->openFile(
@@ -50,21 +50,19 @@ Task<Result<std::filesystem::path>> file_pick_h(utils::file::PickMode mode, cons
         FileExplorer::get()->generateExtensionStrings(options.filters)
     );
 
-    return RetTask::runWithCallback(
-        [state](auto result, auto, auto cancelled) {
-            state->fileCallback = result;
-            state->cancelledCallback = cancelled;
-        }
-    );
+    co_await FileExplorer::get()->m_notify.notified();
+
+    auto path = FileExplorer::get()->getPath();
+    if (!path) {
+        co_return Ok(std::nullopt);
+    }
+
+    co_return Ok(std::move(path.value()));
 }
 
-Task<Result<std::vector<std::filesystem::path>>> file_pickMany_h(const utils::file::FilePickOptions& options) {
-    using RetTask = Task<Result<std::vector<std::filesystem::path>>>;
+arc::Future<Result<std::vector<std::filesystem::path>>> file_pickMany_h(utils::file::FilePickOptions options) {
+    if (FileExplorer::get()->isPickerActive()) co_return Err("File picker is already open");
 
-    if (FileExplorer::get()->isPickerActive()) return RetTask::immediate(Err("File picker is already open"));
-
-    auto state = std::make_shared<PickerState>();
-    FileExplorer::get()->setState(state);
     FileExplorer::get()->setPickerActive(true);
 
     auto defaultPath = sobriety::utils::wineToLinuxPath(options.defaultPath.value_or(dirs::getGameDir()));
@@ -75,12 +73,22 @@ Task<Result<std::vector<std::filesystem::path>>> file_pickMany_h(const utils::fi
         FileExplorer::get()->generateExtensionStrings(options.filters)
     );
 
-    return RetTask::runWithCallback(
-        [state](auto result, auto, auto cancelled) {
-            state->filesCallback = result;
-            state->cancelledCallback = cancelled;
-        }
-    );
+    co_await FileExplorer::get()->m_notify.notified();
+
+    auto paths = FileExplorer::get()->getPaths();
+    if (!paths) {
+        co_return Ok(std::vector<std::filesystem::path>{});
+    }
+
+    co_return Ok(std::move(paths.value()));
+}
+
+std::optional<std::filesystem::path> FileExplorer::getPath() {
+    return m_path;
+}
+
+std::optional<std::vector<std::filesystem::path>> FileExplorer::getPaths() {
+    return m_paths;
 }
 
 /*
@@ -333,6 +341,11 @@ void FileExplorer::openFile(const std::string& startPath, PickMode pickMode, con
         command += "\"";
     }
 
+    queueInMainThread([this] {
+        m_waitingPopup = WaitingPopup::create();
+        m_waitingPopup->show();
+    });
+
     sobriety::utils::runCommand(command);
 }
 
@@ -342,14 +355,6 @@ bool FileExplorer::isPickerActive() {
 
 void FileExplorer::setPickerActive(bool active) {
     m_pickerActive = active;
-}
-
-void FileExplorer::setState(std::shared_ptr<PickerState> state) {
-    m_state = state;
-}
-
-std::shared_ptr<PickerState> FileExplorer::getState() {
-    return m_state;
 }
 
 std::vector<std::string> FileExplorer::generateExtensionStrings(std::vector<utils::file::FilePickOptions::Filter> filters) {
@@ -380,27 +385,28 @@ void FileExplorer::notifySelectedFileChange() {
 
     if (str.empty()) return;
 
-    if (!m_state) return;
-
     if (str == "-1") {
-        if (m_state->cancelledCallback) m_state->cancelledCallback();
+        m_path = std::nullopt;
+        m_paths = std::nullopt;
     }
-    else if (m_state->fileCallback) {
-        m_state->fileCallback(Ok(std::filesystem::path(str)));
-    }
-    else if (m_state->filesCallback) {
+    else {
         auto parts = utils::string::split(str, "\n");
-
-        std::vector<std::filesystem::path> paths;
-        paths.reserve(parts.size());
-
-        for (auto& p : parts) {
-            if (!p.empty()) paths.emplace_back(p);
+        if (parts.empty()) {
+            m_path = std::nullopt;
+            m_paths = std::nullopt;
         }
-
-        m_state->filesCallback(Ok(std::move(paths)));
+        else {
+            m_path = std::filesystem::path(parts[0]);
+            std::vector<std::filesystem::path> paths;
+            for (const auto& path : parts) {
+                paths.push_back(path);
+            }
+            m_paths = paths;
+        }
     }
 
+    m_notify.notifyAll();
+    if (m_waitingPopup) m_waitingPopup->removeFromParent();
     m_pickerActive = false;
 }
 
@@ -409,20 +415,9 @@ void FileExplorer::notifySelectedFileChange() {
     block the main thread.
 */
 
-class $modify(CCTouchDispatcher) {
-    void touches(CCSet *pTouches, CCEvent *pEvent, unsigned int uIndex) {
-        if (FileExplorer::get()->isPickerActive()) {
-            if (uIndex == 0) MessageBeep(MB_ICONWARNING);
-            return;
-        }
-        CCTouchDispatcher::touches(pTouches, pEvent, uIndex);
-    }
-};
-
 class $modify(CCKeyboardDispatcher) {
     bool dispatchKeyboardMSG(enumKeyCodes key, bool isKeyDown, bool isKeyRepeat, double t) {
         if (FileExplorer::get()->isPickerActive()) {
-            if (isKeyDown && !isKeyRepeat) MessageBeep(MB_ICONWARNING);
             return false;
         }
         return CCKeyboardDispatcher::dispatchKeyboardMSG(key, isKeyDown, isKeyRepeat, t);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "WaitingPopup.hpp"
 #include <Geode/Result.hpp>
 #include <Geode/utils/file.hpp>
 #include <vector>
@@ -12,11 +13,7 @@ enum class PickMode {
     BrowseFiles
 };
 
-struct PickerState {
-    std::function<void(geode::Result<std::filesystem::path>)> fileCallback;
-    std::function<void(geode::Result<std::vector<std::filesystem::path>>)> filesCallback;
-    std::function<void()> cancelledCallback;
-};
+class WaitingPopup;
 
 class FileExplorer {
 public:
@@ -28,13 +25,16 @@ public:
     void openFile(const std::string& startPath, PickMode pickMode, const std::vector<std::string>& filters);
     bool isPickerActive();
     void setPickerActive(bool active);
-    void setState(std::shared_ptr<PickerState> state);
     void notifySelectedFileChange();
+    std::optional<std::filesystem::path> getPath();
+    std::optional<std::vector<std::filesystem::path>> getPaths();
 
-    std::shared_ptr<PickerState> getState();
     std::vector<std::string> generateExtensionStrings(std::vector<geode::utils::file::FilePickOptions::Filter> filters);
 
+    arc::Notify m_notify;
+    std::optional<std::filesystem::path> m_path;
+    std::optional<std::vector<std::filesystem::path>> m_paths;
+    WaitingPopup* m_waitingPopup;
 private:
-    std::shared_ptr<PickerState> m_state;
     bool m_pickerActive = false;
 };

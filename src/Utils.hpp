@@ -7,12 +7,13 @@
 #include <minwindef.h>
 #include <processthreadsapi.h>
 #include <string>
+#include <asp/time/SystemTime.hpp>
 
 namespace sobriety::utils {
 
     static auto convertTime(auto timePoint) {
         auto timeEpoch = std::chrono::system_clock::to_time_t(timePoint);
-        return fmt::localtime(timeEpoch);
+        return asp::localtime(timeEpoch);
     }
 
     static geode::Severity fromString(std::string_view severity) {

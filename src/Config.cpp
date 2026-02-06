@@ -20,7 +20,7 @@ Config::Config() {
 
 Severity Config::getConsoleLogLevel() {
     static auto setting = sobriety::utils::fromString(m_geode->getSettingValue<std::string>("console-log-level"));
-    static auto listener = listenForSettingChanges("console-log-level", [this](std::string value) {
+    static auto listener = listenForSettingChanges<std::string>("console-log-level", [](std::string value) {
         setting = sobriety::utils::fromString(value);
     }, m_geode);
 
@@ -29,7 +29,7 @@ Severity Config::getConsoleLogLevel() {
 
 bool Config::shouldLogMillisconds() {
     static auto setting = m_geode->getSettingValue<bool>("log-milliseconds");
-    static auto listener = listenForSettingChanges("log-milliseconds", [this](bool value) {
+    static auto listener = listenForSettingChanges<bool>("log-milliseconds", [](bool value) {
         setting = value;
     }, m_geode);
 
@@ -38,7 +38,7 @@ bool Config::shouldLogMillisconds() {
 
 int Config::getHeartbeatThreshold() {
     static auto setting = m_mod->getSettingValue<int>("console-heartbeat-threshold");
-    static auto listener = listenForSettingChanges("console-heartbeat-threshold", [this](int value) {
+    static auto listener = listenForSettingChanges<int>("console-heartbeat-threshold", [](int value) {
         setting = value;
     });
 
@@ -52,7 +52,7 @@ int Config::getFontSize() {
 
 cocos2d::ccColor3B Config::getConsoleForegroundColor() {
     static auto setting = m_mod->getSettingValue<ccColor3B>("console-foreground-color");
-    static auto listener = listenForSettingChanges("console-foreground-color", [this](ccColor3B value) {
+    static auto listener = listenForSettingChanges<ccColor3B>("console-foreground-color", [](ccColor3B value) {
         setting = value;
         Console::get()->setConsoleColors();
     });
@@ -61,7 +61,7 @@ cocos2d::ccColor3B Config::getConsoleForegroundColor() {
 
 cocos2d::ccColor3B Config::getConsoleBackgroundColor() {
     static auto setting = m_mod->getSettingValue<ccColor3B>("console-background-color");
-    static auto listener = listenForSettingChanges("console-background-color", [this](ccColor3B value) {
+    static auto listener = listenForSettingChanges<ccColor3B>("console-background-color", [](ccColor3B value) {
         setting = value;
         Console::get()->setConsoleColors();
     });
@@ -70,7 +70,7 @@ cocos2d::ccColor3B Config::getConsoleBackgroundColor() {
 
 cocos2d::ccColor3B Config::getLogInfoColor() {
     static auto setting = m_mod->getSettingValue<ccColor3B>("console-log-info-color");
-    static auto listener = listenForSettingChanges("console-log-info-color", [this](ccColor3B value) {
+    static auto listener = listenForSettingChanges<ccColor3B>("console-log-info-color", [](ccColor3B value) {
         setting = value;
         Console::get()->setConsoleColors();
     });
@@ -79,7 +79,7 @@ cocos2d::ccColor3B Config::getLogInfoColor() {
 
 cocos2d::ccColor3B Config::getLogWarnColor() {
     static auto setting = m_mod->getSettingValue<ccColor3B>("console-log-warn-color");
-    static auto listener = listenForSettingChanges("console-log-warn-color", [this](ccColor3B value) {
+    static auto listener = listenForSettingChanges<ccColor3B>("console-log-warn-color", [](ccColor3B value) {
         setting = value;
         Console::get()->setConsoleColors();
     });
@@ -88,7 +88,7 @@ cocos2d::ccColor3B Config::getLogWarnColor() {
 
 cocos2d::ccColor3B Config::getLogErrorColor() {
     static auto setting = m_mod->getSettingValue<ccColor3B>("console-log-error-color");
-    static auto listener = listenForSettingChanges("console-log-error-color", [this](ccColor3B value) {
+    static auto listener = listenForSettingChanges<ccColor3B>("console-log-error-color", [](ccColor3B value) {
         setting = value;
         Console::get()->setConsoleColors();
     });
@@ -97,7 +97,7 @@ cocos2d::ccColor3B Config::getLogErrorColor() {
 
 cocos2d::ccColor3B Config::getLogDebugColor() {
     static auto setting = m_mod->getSettingValue<ccColor3B>("console-log-debug-color");
-    static auto listener = listenForSettingChanges("console-log-debug-color", [this](ccColor3B value) {
+    static auto listener = listenForSettingChanges<ccColor3B>("console-log-debug-color", [](ccColor3B value) {
         setting = value;
         Console::get()->setConsoleColors();
     });

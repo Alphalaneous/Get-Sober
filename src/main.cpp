@@ -1,4 +1,5 @@
 #include <Geode/Geode.hpp>
+#include <Geode/binding/LoadingLayer.hpp>
 #include <Geode/modify/MenuLayer.hpp>
 #include <Geode/modify/CCDirector.hpp>
 #include "Config.hpp"
@@ -8,7 +9,7 @@
 
 using namespace geode::prelude;
 
-$execute {
+$on_mod(Loaded) {
     if (sobriety::utils::isWine()) {
         FileExplorer::get()->setup();
         Console::get()->setup();
@@ -54,7 +55,7 @@ void geode_utils_game_exit_h(bool saveData) {
     geode::utils::game::exit(saveData);
 }
 
-$execute {
+$on_mod(Loaded) {
     (void) Mod::get()->hook(
         reinterpret_cast<void*>(addresser::getNonVirtual(geode::modifier::Resolve<bool>::func(&geode::utils::game::exit))),
         &geode_utils_game_exit_h,
