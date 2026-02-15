@@ -32,7 +32,7 @@ void Console::setup() {
 
         setupLogFile();
         setupScript();
-        setupHooks();
+        setupEvents();
 
         FreeConsole();
         sobriety::utils::runCommand(fmt::format("{}/openConsole.exe {} {} {} {}", Config::get()->getUniquePath(), 
@@ -66,64 +66,41 @@ void Console::setConsoleColors() {
     }
 }
 
-/*
-    I manually remake the logs since I don't have access to internal geode methods or something smh, these don't 
-    have nesting support yet, I really could care less adding that back, but probably will at some point.
-*/
-void vlogImpl_h(Severity severity, Mod* mod, fmt::string_view format, fmt::format_args args) {
-    log::vlogImpl(severity, mod, format, args);
+void Console::setupEvents() {
+    log::LogEvent().listen([] (log::BorrowedLog const& log) {
+        if (!log.m_mod->isLoggingEnabled()) return;
+        if (log.m_severity < log.m_mod->getLogLevel()) return;
+        if (log.m_severity < Config::get()->getConsoleLogLevel()) return;
 
-    if (!mod->isLoggingEnabled()) return;
-    if (severity < mod->getLogLevel()) return;
-    if (severity < Config::get()->getConsoleLogLevel()) return;
+        StringBuffer<> buffer;
+        log.formatTo(buffer, Config::get()->shouldLogMillisconds());
 
-    auto time = std::chrono::system_clock::now();
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(time.time_since_epoch()) % 1000;
+        int color = 0;
+        switch (log.m_severity) {
+            case Severity::Debug:
+                color = 243;
+                break;
+            case Severity::Info:
+                color = 33;
+                break;
+            case Severity::Warning:
+                color = 229;
+                break;
+            case Severity::Error:
+                color = 9;
+                break;
+            default:
+                color = 7;
+                break;
+        }
 
-    Log log {
-        mod,
-        severity,
-        fmt::vformat(format, args),
-        thread::getName(),
-        sobriety::utils::convertTime(time),
-        ms.count()
-    };
+        size_t colorEnd = buffer.view().find_first_of('[') - 1;
 
-    int color = 0;
-    switch (severity) {
-        case Severity::Debug:
-            color = 243;
-            break;
-        case Severity::Info:
-            color = 33;
-            break;
-        case Severity::Warning:
-            color = 229;
-            break;
-        case Severity::Error:
-            color = 9;
-            break;
-        default:
-            color = 7;
-            break;
-    }
-    
-    std::string_view sv{Console::get()->buildLog(log)};
+        auto str = fmt::format("\033[38;5;{}m{}\033[0m{}\n", color, buffer.view().substr(0, colorEnd), buffer.view().substr(colorEnd));
 
-    size_t colorEnd = sv.find_first_of('[') - 1;
-
-    auto str = fmt::format("\033[38;5;{}m{}\033[0m{}\n", color, sv.substr(0, colorEnd), sv.substr(colorEnd));
-
-    auto appender = Console::get()->getLogAppender();
-    if (appender) appender->append(str);
-}
-
-void Console::setupHooks() {
-    (void) Mod::get()->hook(
-        reinterpret_cast<void*>(addresser::getNonVirtual(&log::vlogImpl)),
-        &vlogImpl_h,
-        "log::vlogImpl"
-    );
+        auto appender = Console::get()->getLogAppender();
+        if (appender) appender->append(str);
+    }).leak();
 }
 
 void Console::setupLogFile() {
@@ -216,44 +193,6 @@ void Console::setupHeartbeat() {
         }).detach();
         m_hearbeatActive = true;
     }
-}
-
-std::string Console::buildLog(const Log& log) {
-    std::string ret;
-
-    if (Config::get()->shouldLogMillisconds()) {
-        ret = fmt::format("{:%H:%M:%S}.{:03}", log.time, log.milliseconds);
-    }
-    else {
-        ret = fmt::format("{:%H:%M:%S}", log.time);
-    }
-
-    switch (log.severity.m_value) {
-        case Severity::Debug:
-            ret += " DEBUG";
-            break;
-        case Severity::Info:
-            ret += " INFO ";
-            break;
-        case Severity::Warning:
-            ret += " WARN ";
-            break;
-        case Severity::Error:
-            ret += " ERROR";
-            break;
-        default:
-            ret += " ?????";
-            break;
-    }
-
-    if (log.threadName.empty())
-        ret += fmt::format(" [{}]: ", log.mod->getName());
-    else
-        ret += fmt::format(" [{}] [{}]: ", log.threadName, log.mod->getName());
-
-    ret += log.message;
-
-    return ret;
 }
 
 std::shared_ptr<FileAppender> Console::getLogAppender() {

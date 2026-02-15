@@ -20,7 +20,7 @@ public:
     static Console* get();
 
     void setup();
-    void setupHooks();
+    void setupEvents();
     void setupScript();
     void setupLogFile();
     void setupHeartbeat();

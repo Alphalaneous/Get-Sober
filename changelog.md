@@ -1,3 +1,6 @@
+# 1.0.0-beta.7
+- Use events for logs and exiting
+
 # 1.0.0-beta.6
 - 2.2081 support
 - Fix console showing after crash
