@@ -341,11 +341,6 @@ void FileExplorer::openFile(const std::string& startPath, PickMode pickMode, con
         command += "\"";
     }
 
-    queueInMainThread([this] {
-        m_waitingPopup = WaitingPopup::create();
-        m_waitingPopup->show();
-    });
-
     sobriety::utils::runCommand(command);
 }
 
@@ -355,6 +350,12 @@ bool FileExplorer::isPickerActive() {
 
 void FileExplorer::setPickerActive(bool active) {
     m_pickerActive = active;
+    if (active) {
+        queueInMainThread([this] {
+            m_waitingPopup = WaitingPopup::create();
+            m_waitingPopup->show();
+        });
+    }
 }
 
 std::vector<std::string> FileExplorer::generateExtensionStrings(std::vector<utils::file::FilePickOptions::Filter> filters) {
