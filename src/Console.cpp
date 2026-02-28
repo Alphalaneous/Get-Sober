@@ -68,8 +68,10 @@ void Console::setConsoleColors() {
 
 void Console::setupEvents() {
     log::LogEvent().listen([] (log::BorrowedLog const& log) {
-        if (!log.m_mod->isLoggingEnabled()) return;
-        if (log.m_severity < log.m_mod->getLogLevel()) return;
+        if (log.m_mod) {
+            if (!log.m_mod->isLoggingEnabled()) return;
+            if (log.m_severity < log.m_mod->getLogLevel()) return;
+        }
         if (log.m_severity < Config::get()->getConsoleLogLevel()) return;
 
         StringBuffer<> buffer;
