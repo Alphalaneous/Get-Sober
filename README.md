@@ -1,5 +1,7 @@
 # Sobriety
 
+<cy>**This no longer works on the current Proton Experimental builds, if you use proton, use 10.0-4 or lower.**</c>
+
 ## <cr>THIS MOD IS LINUX ONLY</c>
 
 Replaces the Wine file browser and console with a system one if available.

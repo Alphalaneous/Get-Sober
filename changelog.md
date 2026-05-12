@@ -1,3 +1,6 @@
+# 1.0.0-beta.8
+- Add disclaimer
+
 # 1.0.0-beta.7
 - Use events for logs and exiting
 
